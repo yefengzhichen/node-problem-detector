@@ -1,0 +1,65 @@
+// {
+//     "version": "0.2.0",
+//     "configurations": [
+//         {
+//             "name": "Launch Package",
+//             "type": "go",
+//             "request": "launch",
+//             "mode": "auto",
+//             // "program": "${workspaceFolder}/cmd/scheduler/",
+//             "program": "${workspaceFolder}/cmd/nodeproblemdetector/",
+//             "env": {
+//                 "OS_TENANT_NAME": "service",
+//             },
+//             // "args": ["--kubeconfig=/Users/yefeng/.kube/config"]
+//             "args": ["--logtostderr",
+//             // "--config.system-log-monitor=../../config/kernel-monitor.json",
+//             // "--config.system-stats-monitor=../../config/system-stats-monitor.json",
+//             "--config.custom-plugin-monitor=../../config/health-checker-kubelet.json",
+//             "--port=20256",
+//             "--prometheus-port=20257",
+//         ]
+//         }
+//     ]
+// }
+
+// {
+//     "version": "0.2.0",
+//     "configurations": [
+//         {
+//             "name": "Launch Package",
+//             "type": "go",
+//             "request": "launch",
+//             "mode": "auto",
+//             "program": "${workspaceFolder}/cmd/netchecker/",
+//             "args": ["--network-interface=br-mgmt",
+//             ]
+//         }
+//     ]
+// }
+
+
+// remote debug
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Connect to server",
+            "type": "go",
+            "request": "attach",
+            "mode": "remote",
+            "remotePath": "/tmp/node-problem-detector",
+            // "port": 32355, // netchecker dlv
+            "port": 32345,  // npd dlv
+            "host": "10.20.0.12",
+            "cwd": "${workspaceFolder}",//vscode本地工作目录
+            "trace": "verbose"
+        }
+    ]
+}
+
+// ./bin/node-problem-detector --logtostderr --apiserver-override=http://127.0.0.1:8080?inClusterConfig=false --config.system-log-monitor=config/kernel-monitor.json --config.system-stats-monitor=config/system-stats-monitor.json --port=20256 --prometheus-port=20257
+
+// dlv debug --build-flags="-ldflags='-extldflags=-Wl,-z,lazy'" --headless --listen=:32345 \
+// --api-version=2 --accept-multiclient /tmp/node-problem-detector/cmd/nodeproblemdetector/*.go -- --logtostderr \
+// --config.custom-plugin-monitor=../../config/health-checker-kubelet.json

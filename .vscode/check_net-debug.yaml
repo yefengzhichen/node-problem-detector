@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: check-net-debug
+  namespace: openstack
+  labels:
+    app: check-net-debug
+spec:
+  selector:
+    matchLabels:
+      app: check-net-debug
+  template:
+    metadata:
+      labels:
+        app: check-net-debug
+    spec:
+      # serviceAccountName: check-net-sa
+      hostNetwork: true  # 启用节点网络模式
+      containers:
+      - name: check-net
+        command:
+        - sleep
+        - 100d
+        image: docker.yylt.gq/altonzhu/dlv:go1.23.1
+        # image: hub.easystack.cn/test/dlv:go1.22.2
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 32355  # 直接使用宿主机端口 32355（与 hostPort 一致）
+          name: dlv
+          protocol: TCP
+        securityContext:
+          privileged: true
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        volumeMounts:
+        - mountPath: /tmp
+          name: code
+        - name: localtime
+          mountPath: /etc/localtime
+          readOnly: true
+        # - name: ping
+        #   mountPath: /usr/sbin/ping
+        # - name: ceph
+        #   mountPath: /usr/bin/ceph
+        - mountPath: /etc/ceph/ceph.conf
+          name: ceph-etc
+          readOnly: true
+          subPath: ceph.conf
+      nodeSelector:
+        kubernetes.io/hostname: node-9
+      volumes:
+      - hostPath:
+          path: /root/zt
+          type: Directory
+        name: code
+      - name: localtime
+        hostPath:
+          path: /etc/localtime
+      # - name: ping
+      #   hostPath:
+      #     path: /usr/sbin/ping
+      # - name: ceph
+      #   hostPath:
+      #     path: /usr/bin/ceph
+      - configMap:
+          defaultMode: 292
+          name: ceph-etc
+        name: ceph-etc
+      tolerations:
+        - effect: NoSchedule
+          operator: Exists
+        - effect: NoExecute
+          operator: Exists
+---
+# 创建ClusterRole（允许获取节点/Pod信息）
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: check-net-role
+rules:
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get"]
+---
+# 绑定到服务账号（跨命名空间授权）
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: check-net-binding
+subjects:
+- kind: ServiceAccount
+  name: check-net-sa
+  namespace: zt
+roleRef:
+  kind: ClusterRole
+  name: check-net-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# 在zt命名空间创建专用服务账号
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: check-net-sa
+  namespace: zt

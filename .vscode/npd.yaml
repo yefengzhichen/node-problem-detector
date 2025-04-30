@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  annotations:
+    deprecated.daemonset.template.generation: "2"
+    meta.helm.sh/release-name: node-problem-detector-1740627162
+    meta.helm.sh/release-namespace: default
+  creationTimestamp: "2025-02-27T03:32:43Z"
+  generation: 2
+  labels:
+    app.kubernetes.io/instance: node-problem-detector-1740627162
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: node-problem-detector
+    helm.sh/chart: node-problem-detector-2.3.14
+  name: node-problem-detector-1740627162
+  namespace: default
+  resourceVersion: "419203"
+  uid: 8aa51a90-64e1-4b1d-8372-5f18318c24f5
+spec:
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: node-problem-detector
+      app.kubernetes.io/instance: node-problem-detector-1740627162
+      app.kubernetes.io/name: node-problem-detector
+  template:
+    metadata:
+      annotations:
+        checksum/config: e3eae859ec90d83485dd3a53b7bd8615cf29f50153290bdca4f36a6fa65a767d
+      creationTimestamp: null
+      labels:
+        app: node-problem-detector
+        app.kubernetes.io/instance: node-problem-detector-1740627162
+        app.kubernetes.io/name: node-problem-detector
+    spec:
+      containers:
+      - command:
+        - /bin/sh
+        - -c
+        - 'exec /node-problem-detector --logtostderr --config.system-log-monitor=/config/kernel-monitor.json,/config/docker-monitor.json  --prometheus-address=0.0.0.0
+          --prometheus-port=20257 --k8s-exporter-heartbeat-period=5m0s  '
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        image: k8s.yylt.gq/node-problem-detector/node-problem-detector:v0.8.19
+        imagePullPolicy: IfNotPresent
+        name: node-problem-detector
+        ports:
+        - containerPort: 20257
+          name: exporter
+          protocol: TCP
+        resources: {}
+        securityContext:
+          privileged: true
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /var/log/
+          name: log
+          readOnly: true
+        - mountPath: /etc/localtime
+          name: localtime
+          readOnly: true
+        - mountPath: /custom-config
+          name: custom-config
+          readOnly: true
+      dnsPolicy: ClusterFirst
+      priorityClassName: system-node-critical
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      serviceAccount: node-problem-detector-1740627162
+      serviceAccountName: node-problem-detector-1740627162
+      terminationGracePeriodSeconds: 30
+      tolerations:
+      - effect: NoSchedule
+        operator: Exists
+      volumes:
+      - hostPath:
+          path: /var/log/
+          type: ""
+        name: log
+      - hostPath:
+          path: /etc/localtime
+          type: FileOrCreate
+        name: localtime
+      - configMap:
+          defaultMode: 493
+          name: node-problem-detector-1740627162-custom-config
+        name: custom-config
+  updateStrategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
+status:
+  currentNumberScheduled: 1
+  desiredNumberScheduled: 1
+  numberAvailable: 1
+  numberMisscheduled: 0
+  numberReady: 1
+  observedGeneration: 2
+  updatedNumberScheduled: 1

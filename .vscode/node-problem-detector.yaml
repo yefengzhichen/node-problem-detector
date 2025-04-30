@@ -1,0 +1,135 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-problem-detector
+  namespace: openstack
+  labels:
+    app: node-problem-detector
+spec:
+  selector:
+    matchLabels:
+      app: node-problem-detector
+  template:
+    metadata:
+      labels:
+        app: node-problem-detector
+    spec:
+      hostNetwork: true  # 启用节点网络模式
+      containers:
+      - name: node-problem-detector
+        command:
+        - /usr/bin/node-problem-detector
+        - --logtostderr
+        - --v=3
+        - --kubeconfig=/root/.kube/config
+        # - --apiserver-override=https://127.0.0.1:8443
+        - --config.custom-plugin-monitor=/etc/config/check_net.json
+        image: docker.yylt.gq/altonzhu/node-problem-detector:v0.0.1
+        # imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
+        # ports:
+        # - containerPort: 32345
+        #   hostPort: 32345
+        #   name: dlv
+        #   protocol: TCP
+        securityContext:
+          privileged: true
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        volumeMounts:
+        - name: kubeconfig
+          mountPath: /root/.kube/config
+          readOnly: true
+        - name: localtime
+          mountPath: /etc/localtime
+          readOnly: true
+        - mountPath: /etc/ceph/ceph.conf
+          name: ceph-etc
+          readOnly: true
+          subPath: ceph.conf
+        - mountPath: /etc/config/check_net.json
+          name: node-problem-detector-config
+          readOnly: true
+          subPath: custom-monitor.json
+      nodeSelector:
+        hostha: enabled
+        # kubernetes.io/hostname: node-9
+      # serviceAccountName: node-problem-detector
+      volumes:
+      - name: kubeconfig
+        hostPath:
+          path: /root/.kube/config
+      - name: localtime
+        hostPath:
+          path: /etc/localtime
+      - configMap:
+          defaultMode: 292
+          name: ceph-etc
+        name: ceph-etc
+      - configMap:
+          defaultMode: 292
+          name: node-problem-detector-config
+        name: node-problem-detector-config
+      tolerations:
+        - effect: NoSchedule
+          operator: Exists
+        - effect: NoExecute
+          operator: Exists
+---
+apiVersion: v1
+data:
+  custom-monitor.json: |
+    {
+        "plugin": "custom",
+        "pluginConfig": {
+          "invoke_interval": "150s",
+          "timeout": "150s"
+        },
+        "source": "custom-plugin-monitor-netchecker",
+        "metricsReporting": true,
+        "conditions": [
+          {
+            "type": "NETMgmtProblem",
+            "reason": "MgmtIsUp",
+            "message": "mgmt is up"
+          },
+          {
+            "type": "NETStoragepubProblem",
+            "reason": "StoragepubIsUp",
+            "message": "storagepub is up"
+          }
+        ],
+        "rules": [
+          {
+            "type": "permanent",
+            "condition": "NETMgmtProblem",
+            "reason": "MgmtIsDown",
+            "path": "/usr/bin/net-checker",
+            "args": [
+                "--network-interface=br-mgmt",
+                "--kubeconfig=/root/.kube/config"
+              ],
+            "timeout": "100s"
+          },
+          {
+            "type": "permanent",
+            "condition": "NETStoragepubProblem",
+            "reason": "StoragepubIsDown",
+            "path": "/usr/bin/net-checker",
+            "args": [
+                "--network-interface=br-storagepub",
+                "--kubeconfig=/root/.kube/config",
+                "--ceph-mon-namespace=ceph",
+                "--ceph-mon-name=ceph-mon"
+              ],
+            "timeout": "100s"
+          }
+        ]
+    }
+kind: ConfigMap
+metadata:
+  name: node-problem-detector-config
+  namespace: openstack

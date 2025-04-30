@@ -1,0 +1,50 @@
+{
+    "plugin": "custom",
+    "pluginConfig": {
+      "invoke_interval": "150s",
+      "timeout": "150s",
+      "max_output_length": 80,
+      "concurrency": 3,
+      "enable_message_change_based_condition_update": false
+    },
+    "source": "net-custom-plugin-monitor",
+    "metricsReporting": true,
+    "conditions": [
+      {
+        "type": "NETMgmtProblem",
+        "reason": "MgmtIsUp",
+        "message": "mgmt is up"
+      },
+      {
+        "type": "NETStoragepubProblem",
+        "reason": "StoragepubIsUp",
+        "message": "storagepub is up"
+      }
+    ],
+    "rules": [
+      {
+        "type": "permanent",
+        "condition": "NETMgmtProblem",
+        "reason": "MgmtIsDown",
+        "path": "/tmp/node-problem-detector/cmd/netchecker/net_checker",
+        "args": [
+            "--network-interface=br-mgmt",
+            "--apiserver-override=https://127.0.0.1:8443"
+          ],
+        "timeout": "100s"
+      },
+      {
+        "type": "permanent",
+        "condition": "NETStoragepubProblem",
+        "reason": "StoragepubIsDown",
+        "path": "/tmp/node-problem-detector/cmd/netchecker/net_checker",
+        "args": [
+            "--network-interface=br-storagepub",
+            "--apiserver-override=https://127.0.0.1:8443",
+            "--ceph-mon-namespace=ceph",
+            "--ceph-mon-name=ceph-mon"
+          ],
+        "timeout": "100s"
+      }
+    ]
+}

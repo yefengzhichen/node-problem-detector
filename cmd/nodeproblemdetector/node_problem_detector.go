@@ -18,19 +18,24 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"net"
 
 	"k8s.io/klog/v2"
 
+	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/node-problem-detector/cmd/nodeproblemdetector/exporterplugins"
 	_ "k8s.io/node-problem-detector/cmd/nodeproblemdetector/problemdaemonplugins"
 	"k8s.io/node-problem-detector/cmd/options"
 	"k8s.io/node-problem-detector/pkg/exporters"
 	"k8s.io/node-problem-detector/pkg/exporters/k8sexporter"
 	"k8s.io/node-problem-detector/pkg/exporters/prometheusexporter"
+	"k8s.io/node-problem-detector/pkg/k8sclient"
 	"k8s.io/node-problem-detector/pkg/problemdaemon"
 	"k8s.io/node-problem-detector/pkg/problemdetector"
 	"k8s.io/node-problem-detector/pkg/types"
 	"k8s.io/node-problem-detector/pkg/version"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 func npdMain(ctx context.Context, npdo *options.NodeProblemDetectorOptions) error {
@@ -43,6 +48,18 @@ func npdMain(ctx context.Context, npdo *options.NodeProblemDetectorOptions) erro
 	npdo.SetConfigFromDeprecatedOptionsOrDie()
 	npdo.ValidOrDie()
 
+	client, err := kubernetes.NewForConfig(ctrl.GetConfigOrDie())
+	if err != nil {
+		return err
+	}
+
+	// Initialize br-mgmt and br-storagepub ip to k8s node label.
+	err = initNodeIfaceIP(client)
+	if err != nil {
+		klog.Errorf("init node iface ip failed: %v\n", err)
+		return err
+	}
+
 	// Initialize problem daemons.
 	problemDaemons := problemdaemon.NewProblemDaemons(npdo.MonitorConfigPaths)
 	if len(problemDaemons) == 0 {
@@ -51,7 +68,7 @@ func npdMain(ctx context.Context, npdo *options.NodeProblemDetectorOptions) erro
 
 	// Initialize exporters.
 	defaultExporters := []types.Exporter{}
-	if ke := k8sexporter.NewExporterOrDie(ctx, npdo); ke != nil {
+	if ke := k8sexporter.NewExporterOrDie(ctx, client, npdo); ke != nil {
 		defaultExporters = append(defaultExporters, ke)
 		klog.Info("K8s exporter started.")
 	}
@@ -73,4 +90,70 @@ func npdMain(ctx context.Context, npdo *options.NodeProblemDetectorOptions) erro
 	// Initialize NPD core.
 	p := problemdetector.NewProblemDetector(problemDaemons, npdExporters)
 	return p.Run(ctx)
+}
+
+func initNodeIfaceIP(client *kubernetes.Clientset) error {
+	cli, err := k8sclient.NewClient(client)
+	if err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+	node, err := cli.GetNode(ctx)
+	if err != nil {
+		return fmt.Errorf("get node failed: %v\n", err)
+	}
+	if node.Labels == nil {
+		node.Labels = make(map[string]string)
+	}
+	if node.Labels[k8sclient.IfaceMgmtLabel] != "" &&
+		node.Labels[k8sclient.IfaceStoragepubLabel] != "" {
+		klog.Infof("iface ips are existed, br-mgmt ip: %s, br-storagepub ip: %s", node.Labels[k8sclient.IfaceMgmtLabel], node.Labels[k8sclient.IfaceStoragepubLabel])
+		return nil
+	}
+	// config in /etc/sysconfig/network-scripts/ifcfg-*
+	// can get by `ip addr show *`
+	if node.Labels[k8sclient.IfaceMgmtLabel] == "" {
+		ifaceIp, err := getIfaceIp(k8sclient.IfaceMgmt)
+		if err != nil {
+			klog.Errorf("get iface %s failed: %v\n", k8sclient.IfaceMgmt, err)
+			return err
+		}
+		node.Labels[k8sclient.IfaceMgmtLabel] = ifaceIp
+	}
+	if node.Labels[k8sclient.IfaceStoragepubLabel] == "" {
+		ifaceIp, err := getIfaceIp(k8sclient.IfaceStoragepub)
+		if err != nil {
+			klog.Errorf("get iface %s failed: %v\n", k8sclient.IfaceStoragepub, err)
+			return err
+		}
+		node.Labels[k8sclient.IfaceStoragepubLabel] = ifaceIp
+	}
+	// update node labels
+	_, err = cli.UpdateNode(ctx, node)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func getIfaceIp(name string) (string, error) {
+	iface, err := net.InterfaceByName(name)
+	if err != nil {
+		return "", fmt.Errorf("iface %s get error: %v\n", name, err)
+	}
+	if iface == nil {
+		return "", fmt.Errorf("iface %s not found\n", name)
+	}
+	addrs, err := iface.Addrs()
+	if err != nil {
+		return "", err
+	}
+	if len(addrs) == 0 {
+		return "", fmt.Errorf("iface %s is down\n", name)
+	}
+	// addrs[0] demo: "192.168.10.11/24"
+	res := addrs[0].(*net.IPNet).IP.String()
+	return res, nil
 }

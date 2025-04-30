@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
 	clientset "k8s.io/client-go/kubernetes"
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/record"
@@ -62,6 +63,17 @@ type nodeProblemClient struct {
 }
 
 // NewClientOrDie creates a new problem client, panics if error occurs.
+func NewClient(client *kubernetes.Clientset, npdo *options.NodeProblemDetectorOptions) Client {
+	c := &nodeProblemClient{clock: clock.RealClock{}}
+	c.client = client.CoreV1()
+	c.nodeName = npdo.NodeName
+	c.eventNamespace = npdo.EventNamespace
+	c.nodeRef = getNodeRef(c.eventNamespace, c.nodeName)
+	c.recorders = make(map[string]record.EventRecorder)
+	return c
+}
+
+// NewClientOrDie creates a new problem client, panics if error occurs.
 func NewClientOrDie(npdo *options.NodeProblemDetectorOptions) Client {
 	c := &nodeProblemClient{clock: clock.RealClock{}}
 
@@ -77,6 +89,10 @@ func NewClientOrDie(npdo *options.NodeProblemDetectorOptions) Client {
 	cfg.QPS = npdo.QPS
 	cfg.Burst = npdo.Burst
 	c.client = clientset.NewForConfigOrDie(cfg).CoreV1()
+	// TODO Delete test
+	if c.client != nil {
+		klog.Infof("client is not nil, cfg host is %s", cfg.Host)
+	}
 	c.nodeName = npdo.NodeName
 	c.eventNamespace = npdo.EventNamespace
 	c.nodeRef = getNodeRef(c.eventNamespace, c.nodeName)

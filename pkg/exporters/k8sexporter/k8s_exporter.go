@@ -23,6 +23,7 @@ import (
 	"net/http/pprof"
 	"strconv"
 
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -38,8 +39,6 @@ import (
 type k8sExporter struct {
 	client           problemclient.Client
 	conditionManager condition.ConditionManager
-	writeEvents      bool
-	updateConditions bool
 }
 
 // NewExporterOrDie creates a exporter for Kubernetes apiserver exporting,
@@ -47,12 +46,12 @@ type k8sExporter struct {
 //
 // Note that this function may be blocked (until a timeout occurs) before
 // kube-apiserver becomes ready.
-func NewExporterOrDie(ctx context.Context, npdo *options.NodeProblemDetectorOptions) types.Exporter {
+func NewExporterOrDie(ctx context.Context, client *kubernetes.Clientset, npdo *options.NodeProblemDetectorOptions) types.Exporter {
 	if !npdo.EnableK8sExporter {
 		return nil
 	}
 
-	c := problemclient.NewClientOrDie(npdo)
+	c := problemclient.NewClient(client, npdo)
 
 	klog.Infof("Waiting for kube-apiserver to be ready (timeout %v)...", npdo.APIServerWaitTimeout)
 	if err := waitForAPIServerReadyWithTimeout(ctx, c, npdo); err != nil {
@@ -62,8 +61,6 @@ func NewExporterOrDie(ctx context.Context, npdo *options.NodeProblemDetectorOpti
 	ke := k8sExporter{
 		client:           c,
 		conditionManager: condition.NewConditionManager(c, clock.RealClock{}, npdo.K8sExporterHeartbeatPeriod),
-		writeEvents:      npdo.K8sExporterWriteEvents,
-		updateConditions: npdo.K8sExporterUpdateNodeConditions,
 	}
 
 	ke.startHTTPReporting(npdo)
@@ -73,15 +70,12 @@ func NewExporterOrDie(ctx context.Context, npdo *options.NodeProblemDetectorOpti
 }
 
 func (ke *k8sExporter) ExportProblems(status *types.Status) {
-	if ke.writeEvents {
-		for _, event := range status.Events {
-			ke.client.Eventf(util.ConvertToAPIEventType(event.Severity), status.Source, event.Reason, event.Message)
-		}
+	klog.Info("Exporting status to kube-apiserver, status: ", status)
+	for _, event := range status.Events {
+		ke.client.Eventf(util.ConvertToAPIEventType(event.Severity), status.Source, event.Reason, event.Message)
 	}
-	if ke.updateConditions {
-		for _, cdt := range status.Conditions {
-			ke.conditionManager.UpdateCondition(cdt)
-		}
+	for _, cdt := range status.Conditions {
+		ke.conditionManager.UpdateCondition(cdt)
 	}
 }
 

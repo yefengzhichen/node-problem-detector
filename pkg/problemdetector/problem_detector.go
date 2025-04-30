@@ -81,6 +81,7 @@ func (p *problemDetector) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case status := <-ch:
+			klog.Info("Received status from problem daemon: ", status)
 			for _, exporter := range p.exporters {
 				exporter.ExportProblems(status)
 			}
